@@ -19,5 +19,6 @@ create table players(
 
 create table matches(
     id serial references players(id),
-    win integer
+    win integer,
+    lose integer
 );
