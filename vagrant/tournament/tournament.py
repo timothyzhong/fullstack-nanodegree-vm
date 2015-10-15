@@ -70,6 +70,26 @@ def playerStandings():
         wins: the number of matches the player has won
         matches: the number of matches the player has played
     """
+    conn = connect()
+    cursor = conn.cursor()
+    sql = "select players.id,name,win,lose\
+           from players left join matches\
+           on players.id=matches.id"
+    cursor.execute(sql)
+    rows = cursor.fetchall()
+    result = []
+    for row in rows:
+        player_id = row[0]
+        name = row[1]
+        wins = row[2]
+        if wins==None:
+            wins=0
+        loses = row[3]
+        if loses==None:
+            loses=0
+        matches = wins+loses 
+        result.append([player_id,name,wins,matches])
+    return result
 
 
 def reportMatch(winner, loser):
