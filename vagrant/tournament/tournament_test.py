@@ -88,8 +88,8 @@ def testReportMatches():
     registerPlayer("Diane Grant")
     standings = playerStandings()
     [id1, id2, id3, id4] = [row[0] for row in standings]
-    reportMatch(id1, id2)
-    reportMatch(id3, id4)
+    reportMatch(id1, id2, False)
+    reportMatch(id3, id4, False)
     standings = playerStandings()
     for (i, n, w, m) in standings:
         if m != 1:
@@ -110,8 +110,8 @@ def testPairings():
     registerPlayer("Pinkie Pie")
     standings = playerStandings()
     [id1, id2, id3, id4] = [row[0] for row in standings]
-    reportMatch(id1, id2)
-    reportMatch(id3, id4)
+    reportMatch(id1, id2, False)
+    reportMatch(id3, id4, False)
     pairings = swissPairings()
     if len(pairings) != 2:
         raise ValueError(
@@ -125,6 +125,27 @@ def testPairings():
     print "8. After one match, players with one win are paired."
 
 
+def testDrawGame():
+    deleteMatches()
+    deletePlayers()
+    registerPlayer("Lannister")
+    registerPlayer("Stark")
+    registerPlayer("Baratheon")
+    registerPlayer("Targaryen")
+    standings = playerStandings()
+    [id1, id2, id3, id4] = [row[0] for row in standings]
+    reportMatch(id1, id2, False)
+    reportMatch(id3, id4, True)
+    pairings = swissPairings()
+    [(pid1, pname1, pid2, pname2), (pid3, pname3, pid4, pname4)] = pairings
+    if pid4 != id2:
+        raise ValueError("When number of wins are same,\
+                          player with large number of loses\
+                          should have lower ranking")
+    print "9. When number of wins are same, player with",\
+          "large number of loses have lower ranking"
+
+
 if __name__ == '__main__':
     testDeleteMatches()
     testDelete()
@@ -134,6 +155,7 @@ if __name__ == '__main__':
     testStandingsBeforeMatches()
     testReportMatches()
     testPairings()
+    testDrawGame()
     print "Success!  All tests pass!"
 
 
