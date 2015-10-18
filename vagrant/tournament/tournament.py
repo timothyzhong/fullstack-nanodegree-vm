@@ -74,7 +74,8 @@ def playerStandings():
     cursor = conn.cursor()
     sql = "select players.id,name,win,lose\
            from players left join matches\
-           on players.id=matches.id"
+           on players.id=matches.id\
+           order by win desc,lose;"
     cursor.execute(sql)
     rows = cursor.fetchall()
     result = []
@@ -92,15 +93,36 @@ def playerStandings():
     return result
 
 
-def reportMatch(winner, loser):
+def reportMatch(winner, loser, draw):
     """Records the outcome of a single match between two players.
+       If it's a draw game, no need to update database.
 
     Args:
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
+      draw:  whether the game is draw
     """
     conn = connect()
     cursor = conn.cursor()
+    # draw game
+    if(draw == True):
+        sqlSelect = "select win from matches where id=%s"
+        sqlInsert = "insert into matches values(%s,0,0)"
+
+        cursor.execute(sqlSelect, (winner,))
+        row = cursor.fetchone()
+        if(row is None):       # insert match row with (0,0) score
+           cursor.execute(sqlInsert,(winner,))
+
+        cursor.execute(sqlSelect, (loser,))
+        row = cursor.fetchone()
+        if(row is None):
+           cursor.execute(sqlInsert,(loser,))
+
+        conn.commit()
+        conn.close() 
+        return 
+
 
     # update winner
     sql = "select win from matches where id=%s"
@@ -153,7 +175,7 @@ def swissPairings():
     sql = "select players.id,name,win\
           from players,matches\
           where players.id=matches.id\
-          order by win desc;"
+          order by win desc,lose;"
     cursor.execute(sql)
     rows = cursor.fetchall()
     players = []
