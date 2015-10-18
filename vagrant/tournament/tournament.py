@@ -99,6 +99,38 @@ def reportMatch(winner, loser):
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
     """
+    conn = connect()
+    cursor = conn.cursor()
+    
+    #update winner
+    sql = "select win from matches where id=%s"
+    cursor.execute(sql,(winner,))
+    row = cursor.fetchone()
+    if(row == None):		#not exist
+        sql = "insert into matches values(%s,1,0)"	
+        cursor.execute(sql,(winner,))
+    else:                       #update existed row
+        winCount = row[0]
+        winCount += 1
+        sql = "update matches set win=%s where id=%s"
+        cursor.execute(sql,(winCount,winner,))
+
+    #update loser
+    sql = "select lose from matches where id=%s"
+    cursor.execute(sql,(loser,))
+    row = cursor.fetchone()
+    if(row == None):
+        sql = "insert into matches values(%s,0,1)"    
+        cursor.execute(sql,(loser,))
+    else:
+        loseCount = row[0]
+        loseCount += 1
+        sql = "update matches set lose=%s where id=%s" 
+        cursor.execute(sql,(loseCount,loser,)) 
+ 
+    conn.commit()
+    conn.close()
+    
  
  
 def swissPairings():
