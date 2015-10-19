@@ -73,7 +73,7 @@ def playerStandings():
     conn = connect()
     cursor = conn.cursor()
 
-    sql = "select * from standings;"
+    sql = "select * from standingsWithDraws"
     cursor.execute(sql)
     rows = cursor.fetchall()
     result = []
@@ -82,24 +82,26 @@ def playerStandings():
         name = row[1]
         wins = row[2]
         loses = row[3]
-        matches = wins + loses
+        draws = row[4]
+        matches = wins + loses + draws
         result.append([player_id, name, wins, matches])
     return result
 
 
-def reportMatch(winner, loser):
+def reportMatch(winner, loser, draw):
     """Records the outcome of a single match between two players.
        If it's a draw game, no need to update database.
 
     Args:
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
+      draw:  whether the match is draw game
     """
     conn = connect()
     cursor = conn.cursor()
 
-    sql = "insert into matches values(%s,%s)"
-    cursor.execute(sql, (winner, loser,))
+    sql = "insert into matches values(%s,%s,%s)"
+    cursor.execute(sql, (winner, loser, draw))
 
     conn.commit()
     conn.close()
