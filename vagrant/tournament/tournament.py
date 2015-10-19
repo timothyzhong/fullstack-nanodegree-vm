@@ -72,10 +72,8 @@ def playerStandings():
     """
     conn = connect()
     cursor = conn.cursor()
-    sql = "select players.id,name,win,lose\
-           from players left join matches\
-           on players.id=matches.id\
-           order by win desc,lose;"
+
+    sql = "select * from standings;"
     cursor.execute(sql)
     rows = cursor.fetchall()
     result = []
@@ -83,72 +81,25 @@ def playerStandings():
         player_id = row[0]
         name = row[1]
         wins = row[2]
-        if wins is None:
-            wins = 0
         loses = row[3]
-        if loses is None:
-            loses = 0
         matches = wins + loses
         result.append([player_id, name, wins, matches])
     return result
 
 
-def reportMatch(winner, loser, draw):
+def reportMatch(winner, loser):
     """Records the outcome of a single match between two players.
        If it's a draw game, no need to update database.
 
     Args:
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
-      draw:  whether the game is draw
     """
     conn = connect()
     cursor = conn.cursor()
-    # draw game
-    if(draw == True):
-        sqlSelect = "select win from matches where id=%s"
-        sqlInsert = "insert into matches values(%s,0,0)"
 
-        cursor.execute(sqlSelect, (winner,))
-        row = cursor.fetchone()
-        if(row is None):       # insert match row with (0,0) score
-           cursor.execute(sqlInsert,(winner,))
-
-        cursor.execute(sqlSelect, (loser,))
-        row = cursor.fetchone()
-        if(row is None):
-           cursor.execute(sqlInsert,(loser,))
-
-        conn.commit()
-        conn.close() 
-        return 
-
-
-    # update winner
-    sql = "select win from matches where id=%s"
-    cursor.execute(sql, (winner,))
-    row = cursor.fetchone()
-    if(row is None):		# not exist
-        sql = "insert into matches values(%s,1,0)"
-        cursor.execute(sql, (winner,))
-    else:                       # update existed row
-        winCount = row[0]
-        winCount += 1
-        sql = "update matches set win=%s where id=%s"
-        cursor.execute(sql, (winCount, winner,))
-
-    # update loser
-    sql = "select lose from matches where id=%s"
-    cursor.execute(sql, (loser,))
-    row = cursor.fetchone()
-    if(row is None):
-        sql = "insert into matches values(%s,0,1)"
-        cursor.execute(sql, (loser,))
-    else:
-        loseCount = row[0]
-        loseCount += 1
-        sql = "update matches set lose=%s where id=%s"
-        cursor.execute(sql, (loseCount, loser,))
+    sql = "insert into matches values(%s,%s)"
+    cursor.execute(sql, (winner, loser,))
 
     conn.commit()
     conn.close()
@@ -172,10 +123,7 @@ def swissPairings():
     conn = connect()
     cursor = conn.cursor()
 
-    sql = "select players.id,name,win\
-          from players,matches\
-          where players.id=matches.id\
-          order by win desc,lose;"
+    sql = "select * from standings"
     cursor.execute(sql)
     rows = cursor.fetchall()
     players = []
