@@ -1,5 +1,5 @@
 from catalog import app
-from flask import render_template
+from flask import render_template, jsonify, json
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from catalog.database_setup import Base, Category, Item
@@ -31,5 +31,16 @@ def itemsOfCategory(category_name):
 
 @app.route('/catalog/<category_name>/<item_name>')
 def item(category_name, item_name):
-    return render_template('item.html', category_name = category_name, item_name = item_name)
+    cat = session.query(Category).filter_by(name=category_name).one()
+    items = session.query(Item).filter_by(category_id=cat.id, name=item_name).all()
+    return render_template('item.html', category_name = category_name, items = items)
 
+@app.route('/catalog.json')
+def catalogJSON():
+    cat_list = session.query(Category).all()
+    result = [] 
+    for cat in cat_list:
+        items = session.query(Item).filter_by(category_id=cat.id).all()
+        catObj = dict(id=cat.id,name=cat.name,item=[i.serialize for i in items])
+        result.append(catObj)
+    return jsonify(Category=result)
