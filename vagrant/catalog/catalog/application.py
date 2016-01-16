@@ -1,7 +1,7 @@
 from catalog import app
 from flask import render_template, jsonify, json, request, flash, redirect, url_for
 from flask import session as login_session
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
 from catalog.database_setup import Base, User, Category, Item
 
@@ -60,17 +60,21 @@ def showLogin():
 
 @app.route('/')
 @app.route('/catalog')
+@app.route('/catalog/')
 def index():
-    user_list = session.query(User).all()
-    print "show user list %s" % len(user_list)
-    for user in user_list:
-        print "%s: %s" % (user.id,user.name)
-
+    item_list = session.query(Item).order_by(Item.id.desc()).all()
+    for item in item_list:
+        print "%s: %s" % (item.id,item.name)
+    if len(item_list)>1:
+        del item_list[2:]
     category_list = session.query(Category).all()
-    print "show list %s" % len(category_list)
-    for cat in category_list:
-        print cat.name
-    return render_template('catalog.html', category_list=category_list)
+    if 'username' not in login_session:
+        return render_template('publicIndex.html',
+                               category_list=category_list,
+                               items=item_list)
+    else:
+        return render_template('index.html', category_list=category_list,
+                           items=item_list)
 
 
 @app.route('/catalog/<category_name>/items')
@@ -79,10 +83,12 @@ def itemsOfCategory(category_name):
     cat = session.query(Category).filter_by(name=category_name).one()
     print "cat_id is %s" % cat.id
     item_list = session.query(Item).filter_by(category_id=cat.id).all()
+    category_list = session.query(Category).all()
     for item in item_list:
         print "%s of %s" % (item.name, item.category_id)
     return render_template('itemsOfCategory.html', items=item_list,
-                           category_name=category_name)
+                           category_name=category_name,
+                           category_list = category_list)
 
 
 @app.route('/catalog/<category_name>/<item_name>')
@@ -92,7 +98,13 @@ def item(category_name, item_name):
                                           name=item_name).all()
     single = session.query(Item).filter_by(category_id=cat.id,
                                           name=item_name).one()
-    print single.user_id
+    print "creator id:%s" % single.user_id
+    creator = getUserInfo(single.user_id)
+    if creator.id==single.user_id:
+        print "user matches!"
+    else:
+        print "user not match!"
+
     if 'username' not in login_session:
         return render_template('publicitem.html',
                                category_name=category_name,
@@ -102,13 +114,66 @@ def item(category_name, item_name):
                            items=items)
 
 
-@app.route('/catalog/<item_name>/edit')
+@app.route('/catalog/new', methods=['GET', 'POST'])
+def newItem():
+    if 'username' not in login_session:
+        return redirect('/catalog')
+    if request.method == 'POST':
+        cat = session.query(Category).filter_by(name=request.form['category']).one()
+        user = session.query(User).filter_by(id=login_session['user_id']).one()
+        newItem = Item(name=request.form['name'],
+                       description=request.form['description'],
+                       category=cat,
+                       user=user)
+        session.add(newItem)
+        flash('New item %s created' % newItem.name)
+        session.commit()
+        return redirect('/catalog')
+    else:
+        category_list = session.query(Category).all()
+        return render_template('newItem.html', category_list=category_list)
+
+
+@app.route('/catalog/<item_name>/edit', methods=['GET', 'POST'])
 def editItem(item_name):
+    if 'username' not in login_session:
+        return redirect('/catalog')
     item = session.query(Item).filter_by(name=item_name).one()
-    return render_template('editItem.html',category=item.category,
+    if item.user_id != login_session['user_id']:
+        return "<script>function myFunction() {alert('You are not authorized to edit this item.');}</script><body onload='myFunction()''>"
+    if request.method == 'POST':
+        print "post"
+        if (request.form['name']!=None) and (request.form['description']!=None):
+            item.name = request.form['name']
+            item.description = request.form['description']
+            if item.category.name != request.form['category']:
+                newCat = session.query(Category).filter_by(name=request.form['category']).one()
+                item.category = newCat
+            session.add(item)
+            session.commit()
+            flash('Item Successfully Edited %s' % item.name)
+        return redirect('/catalog')
+    else:
+        category_list = session.query(Category).all()
+        return render_template('editItem.html',category_list=category_list,
                            item=item)
 
 
+@app.route('/catalog/<item_name>/delete', methods=['GET', 'POST'])
+def deleteItem(item_name):
+    if 'username' not in login_session:
+        return redirect('/catalog')
+    item = session.query(Item).filter_by(name=item_name).one()
+    if item.user_id != login_session['user_id']:
+        return "<script>function myFunction() {alert('You are not authorized to delete this item.');}</script><body onload='myFunction()''>"
+    if request.method == 'POST':
+        session.delete(item)
+        flash('%s Successfully Deleted' % item.name)
+        session.commit()
+        print "here..."
+        return redirect('/catalog')
+    else:
+        return render_template('/deleteItem.html',item=item)
 
 @app.route('/catalog.json')
 def catalogJSON():
@@ -309,10 +374,10 @@ def fbconnect():
     login_session['picture'] = data["data"]["url"]
 
     # see if user exists
-    # user_id = getUserID(login_session['email'])
-    # if not user_id:
-    #     user_id = createUser(login_session)
-    # login_session['user_id'] = user_id
+    user_id = getUserID(login_session['email'])
+    if not user_id:
+        user_id = createUser(login_session)
+    login_session['user_id'] = user_id
 
     output = ''
     output += '<h1>Welcome, '

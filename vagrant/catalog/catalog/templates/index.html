@@ -1,0 +1,23 @@
+{% extends "main.html" %}
+{% block content %}
+
+<div id="ui-grid-left">
+{% include "catalog.html" %}
+</div>
+
+<div id="ui-grid-right">
+<h2>Latest items</h2>
+
+    {% for item in items %}
+
+    <div>
+        <a href='{{url_for('item', category_name=item.category.name, item_name=item.name)}}'>{{item.name}}</a>
+        ({{item.category.name}})<br>
+    </div>
+    {% endfor %}
+
+    <br>
+    <div><a href='/catalog/new'>Add new item</a></div>
+
+</div>
+{% endblock %}
