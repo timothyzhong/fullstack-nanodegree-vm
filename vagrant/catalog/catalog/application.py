@@ -1,7 +1,8 @@
+# Server application
 import os
 import time
 from catalog import app
-from flask import render_template, jsonify, json, request, flash, redirect, url_for
+from flask import render_template, jsonify, json, request, redirect, url_for
 from flask import session as login_session
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
@@ -9,12 +10,13 @@ from catalog.database_setup import Base, User, Category, Item
 from werkzeug import secure_filename
 
 # imports for login
-import random, string
+import random
+import string
 from oauth2client.client import flow_from_clientsecrets
 from oauth2client.client import FlowExchangeError
 import httplib2
 import json
-from flask import make_response
+from flask import make_response, flash
 import requests
 
 CLIENT_ID = json.loads(
@@ -30,13 +32,15 @@ session = DBSession()
 
 
 # setup for file upload
-ALLOWED_EXTENSIONS = set(['txt','pdf','png','jpg','jpeg','gif'])
+ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
+
 
 # User Helper Functions
-
 def createUser(login_session):
-    newUser = User(name=login_session['username'], email=login_session[
-                   'email'], picture=login_session['picture'])
+    """Create user entry in database"""
+    newUser = User(name=login_session['username'],
+                   email=login_session['email'],
+                   picture=login_session['picture'])
     session.add(newUser)
     session.commit()
     user = session.query(User).filter_by(email=login_session['email']).one()
@@ -44,11 +48,13 @@ def createUser(login_session):
 
 
 def getUserInfo(user_id):
+    """Get the user from database using their user id"""
     user = session.query(User).filter_by(id=user_id).one()
     return user
 
 
 def getUserID(email):
+    """Get user id from database using their email address"""
     try:
         user = session.query(User).filter_by(email=email).one()
         return user.id
@@ -59,18 +65,19 @@ def getUserID(email):
 # file upload functions
 
 def allowed_file(filename):
+    """Check whether a file name is legal"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
 
-@app.route('/catalog/upload',methods=['GET','POST'])
+@app.route('/catalog/upload', methods=['GET', 'POST'])
 def upload_file():
     if request.method == 'POST':
-            file = request.files['file']
-            if file and allowed_file(file.filename):
-                filename = secure_filename(file.filename)
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                return redirect('/catalog')
+        file = request.files['file']
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            return redirect('/catalog')
     return '''
         <!doctype html>
         <title>Upload new File</title>
@@ -81,6 +88,7 @@ def upload_file():
         </form>
         '''
 
+
 # Create anti-forgery state token
 @app.route('/login')
 def showLogin():
@@ -89,14 +97,15 @@ def showLogin():
     login_session['state'] = state
     return render_template('login.html', STATE=state)
 
+
 @app.route('/')
 @app.route('/catalog')
 @app.route('/catalog/')
 def index():
     item_list = session.query(Item).order_by(Item.id.desc()).all()
     for item in item_list:
-        print "%s: %s" % (item.id,item.name)
-    if len(item_list)>4:
+        print "%s: %s" % (item.id, item.name)
+    if len(item_list) > 4:
         del item_list[5:]
     category_list = session.query(Category).order_by(Category.name).all()
     if 'username' not in login_session:
@@ -105,7 +114,7 @@ def index():
                                items=item_list)
     else:
         return render_template('index.html', category_list=category_list,
-                           items=item_list)
+                               items=item_list)
 
 
 @app.route('/catalog/<category_name>/items')
@@ -119,58 +128,53 @@ def itemsOfCategory(category_name):
         print "%s of %s" % (item.name, item.category_id)
     return render_template('itemsOfCategory.html', items=item_list,
                            category_name=category_name,
-                           category_list = category_list)
+                           category_list=category_list)
 
 
 @app.route('/catalog/<category_name>/<item_name>')
 def item(category_name, item_name):
     cat = session.query(Category).filter_by(name=category_name).one()
-    items = session.query(Item).filter_by(category_id=cat.id,
-                                          name=item_name).all()
-    single = session.query(Item).filter_by(category_id=cat.id,
-                                          name=item_name).one()
-    print "creator id:%s" % single.user_id
-    creator = getUserInfo(single.user_id)
-    if creator.id==single.user_id:
-        print "user matches!"
-    else:
-        print "user not match!"
+    item = session.query(Item).filter_by(category_id=cat.id,
+                                         name=item_name).one()
+    creator = getUserInfo(item.user_id)
 
-    if 'username' not in login_session:
+    # check whether user is logged in
+    if 'username' not in login_session or \
+       creator.id != item.user_id:            # current user is not the creator
         return render_template('publicitem.html',
                                category_name=category_name,
-                               items=items)
+                               item=item)
     else:
         return render_template('item.html', category_name=category_name,
-                           items=items)
+                               item=item)
 
 
 @app.route('/catalog/new', methods=['GET', 'POST'])
 def newItem():
     if 'username' not in login_session:
         return redirect('/catalog')
-    
+
     category_list = session.query(Category).order_by(Category.name).all()
     if request.method == 'POST':
         itemName = request.form['name']
+
         # check for empty name
         if not itemName or itemName == '':
             flash('Please enter an item name')
             time.sleep(1)
             return render_template('newItem.html', category_list=category_list)
-        
+
         # check for duplicate item
         cat = session.query(Category).filter_by(name=request.form['category']).one()
-        item = session.query(Item).filter_by(name=itemName,category=cat).all()
+        item = session.query(Item).filter_by(name=itemName, category=cat).all()
         if item:
-            flash('Item %s of %s already existed' % (item[0].name,cat.name))
+            flash('Item %s of %s already existed' % (item[0].name, cat.name))
             time.sleep(1)
             return render_template('newItem.html', category_list=category_list)
 
         # save upload file
         file = request.files['file']
         if file and allowed_file(file.filename):
-            # filename = secure_filename(file.f`\ilename)
             filename = itemName + '.' + file.filename.rsplit('.', 1)[1]
             filename = secure_filename(filename)
             filedir = cat.name + "/" + filename
@@ -187,8 +191,9 @@ def newItem():
         session.add(newItem)
         flash('New item %s created' % newItem.name)
         session.commit()
-        
+
         return redirect('/catalog')
+    # get method
     else:
         return render_template('newItem.html', category_list=category_list)
 
@@ -197,34 +202,57 @@ def newItem():
 def editItem(item_name):
     if 'username' not in login_session:
         return redirect('/catalog')
+
     item = session.query(Item).filter_by(name=item_name).one()
     if item.user_id != login_session['user_id']:
-        return "<script>function myFunction() {alert('You are not authorized to edit this item.');}</script><body onload='myFunction()''>"
+        return '''<script>function myFunction(){alert(
+                  'You are not authorized to edit this item.');}
+                  </script><body onload='myFunction()''>'''
+
     if request.method == 'POST':
-        print "post"
-        if (request.form['name']!=None) and (request.form['description']!=None):
+        if (request.form['name'] != None) and \
+           (request.form['description'] != None):
             item.name = request.form['name']
             item.description = request.form['description']
             if item.category.name != request.form['category']:
-                newCat = session.query(Category).filter_by(name=request.form['category']).one()
+                newCat = session.query(Category).filter_by(
+                         name=request.form['category']).one()
                 item.category = newCat
+
+            # save upload file
+            file = request.files['file']
+            if file and allowed_file(file.filename):
+                filename = item.name + '.' + file.filename.rsplit('.', 1)[1]
+                filename = secure_filename(filename)
+                filedir = item.category.name + "/" + filename
+                finalDir = os.path.join(app.config['UPLOAD_FOLDER'], filedir)
+                file.save(finalDir)
+                item.image = filedir
+
+            # save updated item to database
             session.add(item)
             session.commit()
             flash('Item Successfully Edited %s' % item.name)
         return redirect('/catalog')
+    # get method
     else:
         category_list = session.query(Category).all()
-        return render_template('editItem.html',category_list=category_list,
-                           item=item)
+        return render_template('editItem.html', category_list=category_list,
+                               item=item)
 
 
 @app.route('/catalog/<item_name>/delete', methods=['GET', 'POST'])
 def deleteItem(item_name):
     if 'username' not in login_session:
         return redirect('/catalog')
+
+    # check for creator
     item = session.query(Item).filter_by(name=item_name).one()
     if item.user_id != login_session['user_id']:
-        return "<script>function myFunction() {alert('You are not authorized to delete this item.');}</script><body onload='myFunction()''>"
+        return '''<script>function myFunction() {alert(
+                'You are not authorized to delete this item.');}
+                </script><body onload='myFunction()''>'''
+
     if request.method == 'POST':
         try:
             imgdir = os.path.join(app.config['UPLOAD_FOLDER'], item.image)
@@ -238,8 +266,10 @@ def deleteItem(item_name):
         session.commit()
         return redirect('/catalog')
     else:
-        return render_template('/deleteItem.html',item=item)
+        return render_template('/deleteItem.html', item=item)
 
+
+# Return all data in JSON format
 @app.route('/catalog.json')
 def catalogJSON():
     cat_list = session.query(Category).all()
@@ -255,11 +285,6 @@ def catalogJSON():
 # Handle Google API
 @app.route('/gconnect', methods=['POST'])
 def gconnect():
-    print "gconnect"
-
-    print login_session['state']
-    print request.args.get('state')
-
     # Validate state token
     if request.args.get('state') != login_session['state']:
         response = make_response(json.dumps('Invalid state parameter.'), 401)
@@ -272,7 +297,8 @@ def gconnect():
 
     try:
         # Upgrade the authorization code into a credentials object
-        oauth_flow = flow_from_clientsecrets('catalog/client_secrets.json', scope='')
+        oauth_flow = flow_from_clientsecrets('catalog/client_secrets.json',
+                                             scope='')
         oauth_flow.redirect_uri = 'postmessage'
         credentials = oauth_flow.step2_exchange(code)
     except FlowExchangeError:
@@ -313,7 +339,8 @@ def gconnect():
     stored_credentials = login_session.get('credentials')
     stored_gplus_id = login_session.get('gplus_id')
     if stored_credentials is not None and gplus_id == stored_gplus_id:
-        response = make_response(json.dumps('Current user is already connected.'),
+        response = make_response(json.dumps(
+                                 'Current user is already connected.'),
                                  200)
         response.headers['Content-Type'] = 'application/json'
         print 'Current user is already connected.'
@@ -339,7 +366,7 @@ def gconnect():
     # Add provider to login session
     login_session['provider'] = 'google'
 
-    #see if user exists, if it doesn't make a new one
+    # see if user exists, if it doesn't make a new one
     user_id = getUserID(login_session['email'])
     if not user_id:
         user_id = createUser(login_session)
@@ -352,7 +379,9 @@ def gconnect():
     output += '!</h1>'
     output += '<img src="'
     output += login_session['picture']
-    output += ' " style = "width: 300px; height: 300px;border-radius: 150px;-webkit-border-radius: 150px;-moz-border-radius: 150px;"> '
+    output += ''' " style = "width: 300px; height: 300px;
+               border-radius: 150px;-webkit-border-radius: 150px;
+               -moz-border-radius: 150px;"> '''
     flash("you are now logged in as %s" % login_session['username'])
     print "done!"
     return output
@@ -362,32 +391,29 @@ def gconnect():
 def gdisconnect():
     access_token = login_session['access_token']
     print 'In gdisconnect access token is %s', access_token
-    print 'User name is: ' 
+    print 'User name is: '
     print login_session['username']
     if access_token is None:
- 	print 'Access Token is None'
-    	response = make_response(json.dumps('Current user not connected.'), 401)
-    	response.headers['Content-Type'] = 'application/json'
-    	return response
+        print 'Access Token is None'
+        response = make_response(json.dumps('Current user not connected.'),
+                                 401)
+        response.headers['Content-Type'] = 'application/json'
+        return response
 
-    url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % login_session['access_token']
+    url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' %\
+          login_session['access_token']
     h = httplib2.Http()
     result = h.request(url, 'GET')[0]
-    print 'result is '
-    # print result
+
     if result['status'] == '200':
-	# del login_session['access_token'] 
-    	# del login_session['gplus_id']
-    	# del login_session['username']
-    	# del login_session['email']
-    	# del login_session['picture']
-    	response = make_response(json.dumps('Successfully disconnected.'), 200)
-    	response.headers['Content-Type'] = 'application/json'
-    	return response
+        response = make_response(json.dumps('Successfully disconnected.'), 200)
+        response.headers['Content-Type'] = 'application/json'
+        return response
     else:
-    	response = make_response(json.dumps('Failed to revoke token for given user.', 400))
-    	response.headers['Content-Type'] = 'application/json'
-    	return response
+        response = make_response(json.dumps(
+            'Failed to revoke token for given user.', 400))
+        response.headers['Content-Type'] = 'application/json'
+        return response
 
 
 # Facebook API
@@ -414,19 +440,17 @@ def fbconnect():
     # strip expire tag from access token
     token = result.split("&")[0]
 
-
     url = 'https://graph.facebook.com/v2.4/me?%s&fields=name,id,email' % token
     h = httplib2.Http()
     result = h.request(url, 'GET')[1]
-    # print "url sent for API access:%s"% url
-    # print "API JSON result: %s" % result
     data = json.loads(result)
     login_session['provider'] = 'facebook'
     login_session['username'] = data["name"]
     login_session['email'] = data["email"]
     login_session['facebook_id'] = data["id"]
 
-    # The token must be stored in the login_session in order to properly logout, let's strip out the information before the equals sign in our token
+    # The token must be stored in the login_session in order to properly logout
+    # Let's strip out the information before the equals sign in our token
     stored_token = token.split("=")[1]
     login_session['access_token'] = stored_token
 
@@ -451,7 +475,8 @@ def fbconnect():
     output += '!</h1>'
     output += '<img src="'
     output += login_session['picture']
-    output += ' " style = "width: 300px; height: 300px;border-radius: 150px;-webkit-border-radius: 150px;-moz-border-radius: 150px;"> '
+    output += ''' " style = "width: 300px; height: 300px;border-radius: 150px
+                 ;-webkit-border-radius: 150px;-moz-border-radius: 150px;"> '''
 
     flash("Now logged in as %s" % login_session['username'])
     return output
@@ -460,9 +485,11 @@ def fbconnect():
 @app.route('/fbdisconnect')
 def fbdisconnect():
     facebook_id = login_session['facebook_id']
+
     # The access token must me included to successfully logout
     access_token = login_session['access_token']
-    url = 'https://graph.facebook.com/%s/permissions?access_token=%s' % (facebook_id,access_token)
+    url = 'https://graph.facebook.com/%s/permissions?access_token=%s' % \
+        (facebook_id, access_token)
     h = httplib2.Http()
     result = h.request(url, 'DELETE')[1]
     return "you have been logged out"
@@ -476,7 +503,6 @@ def disconnect():
         if login_session['provider'] == 'google':
             gdisconnect()
             del login_session['gplus_id']
-            # del login_session['credentials']
             del login_session['access_token']
         if login_session['provider'] == 'facebook':
             fbdisconnect()
@@ -485,7 +511,6 @@ def disconnect():
         del login_session['username']
         del login_session['email']
         del login_session['picture']
-        #del login_session['user_id']
         del login_session['provider']
         flash("You have successfully been logged out.")
         print "logged out"
@@ -494,3 +519,4 @@ def disconnect():
         flash("You were not logged in")
         print "not logged in"
         return redirect('catalog')
+

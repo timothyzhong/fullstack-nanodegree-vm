@@ -1,3 +1,4 @@
+# Setup database
 import os
 import sys
 from sqlalchemy import Column, ForeignKey, Integer, String
@@ -57,5 +58,5 @@ class Item(Base):
 engine = create_engine('sqlite:///catalog.db')
 
 
-# Base.metadata.drop_all(engine)    # use when schema is changed 
+# Base.metadata.drop_all(engine)    # use when schema is changed
 Base.metadata.create_all(engine)
