@@ -1,9 +1,12 @@
+import os
+import time
 from catalog import app
 from flask import render_template, jsonify, json, request, flash, redirect, url_for
 from flask import session as login_session
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
 from catalog.database_setup import Base, User, Category, Item
+from werkzeug import secure_filename
 
 # imports for login
 import random, string
@@ -25,6 +28,9 @@ Base.metadata.bind = engine
 DBSession = sessionmaker(bind=engine)
 session = DBSession()
 
+
+# setup for file upload
+ALLOWED_EXTENSIONS = set(['txt','pdf','png','jpg','jpeg','gif'])
 
 # User Helper Functions
 
@@ -50,6 +56,31 @@ def getUserID(email):
         return None
 
 
+# file upload functions
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
+
+
+@app.route('/catalog/upload',methods=['GET','POST'])
+def upload_file():
+    if request.method == 'POST':
+            file = request.files['file']
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                return redirect('/catalog')
+    return '''
+        <!doctype html>
+        <title>Upload new File</title>
+        <h1>Upload new File</h1>
+        <form action="" method=post enctype=multipart/form-data>
+          <p><input type=file name=file>
+             <input type=submit value=Upload>
+        </form>
+        '''
+
 # Create anti-forgery state token
 @app.route('/login')
 def showLogin():
@@ -65,9 +96,9 @@ def index():
     item_list = session.query(Item).order_by(Item.id.desc()).all()
     for item in item_list:
         print "%s: %s" % (item.id,item.name)
-    if len(item_list)>1:
-        del item_list[2:]
-    category_list = session.query(Category).all()
+    if len(item_list)>4:
+        del item_list[5:]
+    category_list = session.query(Category).order_by(Category.name).all()
     if 'username' not in login_session:
         return render_template('publicIndex.html',
                                category_list=category_list,
@@ -83,7 +114,7 @@ def itemsOfCategory(category_name):
     cat = session.query(Category).filter_by(name=category_name).one()
     print "cat_id is %s" % cat.id
     item_list = session.query(Item).filter_by(category_id=cat.id).all()
-    category_list = session.query(Category).all()
+    category_list = session.query(Category).order_by(Category.name).all()
     for item in item_list:
         print "%s of %s" % (item.name, item.category_id)
     return render_template('itemsOfCategory.html', items=item_list,
@@ -118,19 +149,47 @@ def item(category_name, item_name):
 def newItem():
     if 'username' not in login_session:
         return redirect('/catalog')
+    
+    category_list = session.query(Category).order_by(Category.name).all()
     if request.method == 'POST':
+        itemName = request.form['name']
+        # check for empty name
+        if not itemName or itemName == '':
+            flash('Please enter an item name')
+            time.sleep(1)
+            return render_template('newItem.html', category_list=category_list)
+        
+        # check for duplicate item
         cat = session.query(Category).filter_by(name=request.form['category']).one()
+        item = session.query(Item).filter_by(name=itemName,category=cat).all()
+        if item:
+            flash('Item %s of %s already existed' % (item[0].name,cat.name))
+            time.sleep(1)
+            return render_template('newItem.html', category_list=category_list)
+
+        # save upload file
+        file = request.files['file']
+        if file and allowed_file(file.filename):
+            # filename = secure_filename(file.f`\ilename)
+            filename = itemName + '.' + file.filename.rsplit('.', 1)[1]
+            filename = secure_filename(filename)
+            filedir = cat.name + "/" + filename
+            finalDir = os.path.join(app.config['UPLOAD_FOLDER'], filedir)
+            file.save(finalDir)
+
+        # create new item
         user = session.query(User).filter_by(id=login_session['user_id']).one()
-        newItem = Item(name=request.form['name'],
+        newItem = Item(name=itemName,
                        description=request.form['description'],
                        category=cat,
-                       user=user)
+                       user=user,
+                       image=filedir)
         session.add(newItem)
         flash('New item %s created' % newItem.name)
         session.commit()
+        
         return redirect('/catalog')
     else:
-        category_list = session.query(Category).all()
         return render_template('newItem.html', category_list=category_list)
 
 
@@ -167,10 +226,16 @@ def deleteItem(item_name):
     if item.user_id != login_session['user_id']:
         return "<script>function myFunction() {alert('You are not authorized to delete this item.');}</script><body onload='myFunction()''>"
     if request.method == 'POST':
+        try:
+            imgdir = os.path.join(app.config['UPLOAD_FOLDER'], item.image)
+            print "delete %s" % imgdir
+            if os.path.isfile(imgdir):
+                os.unlink(imgdir)
+        except Exception, e:
+            print e
         session.delete(item)
         flash('%s Successfully Deleted' % item.name)
         session.commit()
-        print "here..."
         return redirect('/catalog')
     else:
         return render_template('/deleteItem.html',item=item)
