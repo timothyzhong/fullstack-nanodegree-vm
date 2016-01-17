@@ -1,0 +1,9 @@
+#ui-grid-left{
+    width: 30%;
+    float: left;
+}
+
+#ui-grid-right{
+    width: 70%;
+    float: right;
+}
