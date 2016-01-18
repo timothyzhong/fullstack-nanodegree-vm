@@ -19,9 +19,12 @@ import json
 from flask import make_response, flash
 import requests
 
+# Application setup
 CLIENT_ID = json.loads(
     open('catalog/client_secrets.json', 'r').read())['web']['client_id']
 APPLICATION_NAME = "Catalog App"
+UPLOAD_FOLDER = '/vagrant/catalog/catalog/static/images'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # setup for using database
 engine = create_engine('sqlite:///catalog.db')
@@ -179,7 +182,11 @@ def newItem():
             filename = secure_filename(filename)
             filedir = cat.name + "/" + filename
             finalDir = os.path.join(app.config['UPLOAD_FOLDER'], filedir)
-            file.save(finalDir)
+            try:
+                file.save(finalDir)
+            except IOError:
+                print IOError
+                flash('Failed to save image file')
 
         # create new item
         user = session.query(User).filter_by(id=login_session['user_id']).one()
@@ -198,8 +205,8 @@ def newItem():
         return render_template('newItem.html', category_list=category_list)
 
 
-@app.route('/catalog/<item_name>/edit', methods=['GET', 'POST'])
-def editItem(item_name):
+@app.route('/catalog/<category_name>/<item_name>/edit', methods=['GET', 'POST'])
+def editItem(item_name, category_name):
     if 'username' not in login_session:
         return redirect('/catalog')
 
@@ -241,13 +248,15 @@ def editItem(item_name):
                                item=item)
 
 
-@app.route('/catalog/<item_name>/delete', methods=['GET', 'POST'])
-def deleteItem(item_name):
+@app.route('/catalog/<category_name>/<item_name>/delete', methods=['GET', 'POST'])
+def deleteItem(item_name, category_name):
     if 'username' not in login_session:
         return redirect('/catalog')
 
+    cat = session.query(Category).filter_by(name=category_name).one()
+    item = session.query(Item).filter_by(name=item_name,
+                                         category=cat).one()
     # check for creator
-    item = session.query(Item).filter_by(name=item_name).one()
     if item.user_id != login_session['user_id']:
         return '''<script>function myFunction() {alert(
                 'You are not authorized to delete this item.');}
@@ -383,18 +392,13 @@ def gconnect():
                border-radius: 150px;-webkit-border-radius: 150px;
                -moz-border-radius: 150px;"> '''
     flash("you are now logged in as %s" % login_session['username'])
-    print "done!"
     return output
 
 
 @app.route('/gdisconnect')
 def gdisconnect():
     access_token = login_session['access_token']
-    print 'In gdisconnect access token is %s', access_token
-    print 'User name is: '
-    print login_session['username']
     if access_token is None:
-        print 'Access Token is None'
         response = make_response(json.dumps('Current user not connected.'),
                                  401)
         response.headers['Content-Type'] = 'application/json'
@@ -424,7 +428,6 @@ def fbconnect():
         response.headers['Content-Type'] = 'application/json'
         return response
     access_token = request.data
-    print "access token received %s " % access_token
 
     app_id = json.loads(open('catalog/fb_client_secrets.json', 'r').read())[
         'web']['app_id']
@@ -499,7 +502,6 @@ def fbdisconnect():
 @app.route('/disconnect')
 def disconnect():
     if 'provider' in login_session:
-        print "disconnect %s" % login_session['provider']
         if login_session['provider'] == 'google':
             gdisconnect()
             del login_session['gplus_id']
