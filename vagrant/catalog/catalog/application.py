@@ -18,6 +18,7 @@ import httplib2
 import json
 from flask import make_response, flash
 import requests
+from functools import wraps
 
 # Application setup
 CLIENT_ID = json.loads(
@@ -36,6 +37,16 @@ session = DBSession()
 
 # setup for file upload
 ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
+
+
+# Login_required decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in login_session:
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 # User Helper Functions
@@ -66,7 +77,6 @@ def getUserID(email):
 
 
 # file upload functions
-
 def allowed_file(filename):
     """Check whether a file name is legal"""
     return '.' in filename and \
@@ -75,6 +85,7 @@ def allowed_file(filename):
 
 @app.route('/catalog/upload', methods=['GET', 'POST'])
 def upload_file():
+    """Handle upload requests"""
     if request.method == 'POST':
         file = request.files['file']
         if file and allowed_file(file.filename):
@@ -95,6 +106,7 @@ def upload_file():
 # Create anti-forgery state token
 @app.route('/login')
 def showLogin():
+    """Return login page"""
     state = ''.join(random.choice(string.ascii_uppercase + string.digits)
                     for x in xrange(32))
     login_session['state'] = state
@@ -105,9 +117,8 @@ def showLogin():
 @app.route('/catalog')
 @app.route('/catalog/')
 def index():
+    """Return index page"""
     item_list = session.query(Item).order_by(Item.id.desc()).all()
-    for item in item_list:
-        print "%s: %s" % (item.id, item.name)
     if len(item_list) > 4:
         del item_list[5:]
     category_list = session.query(Category).order_by(Category.name).all()
@@ -122,6 +133,7 @@ def index():
 
 @app.route('/catalog/<category_name>/items')
 def itemsOfCategory(category_name):
+    """Return category page with all its items"""
     print "looking up items of %s" % category_name
     cat = session.query(Category).filter_by(name=category_name).one()
     print "cat_id is %s" % cat.id
@@ -136,6 +148,7 @@ def itemsOfCategory(category_name):
 
 @app.route('/catalog/<category_name>/<item_name>')
 def item(category_name, item_name):
+    """Return detailed item page"""
     cat = session.query(Category).filter_by(name=category_name).one()
     item = session.query(Item).filter_by(category_id=cat.id,
                                          name=item_name).one()
@@ -153,9 +166,9 @@ def item(category_name, item_name):
 
 
 @app.route('/catalog/new', methods=['GET', 'POST'])
+@login_required
 def newItem():
-    if 'username' not in login_session:
-        return redirect('/catalog')
+    """Create new item"""
 
     category_list = session.query(Category).order_by(Category.name).all()
     if request.method == 'POST':
@@ -206,9 +219,8 @@ def newItem():
 
 
 @app.route('/catalog/<category_name>/<item_name>/edit', methods=['GET', 'POST'])
+@login_required
 def editItem(item_name, category_name):
-    if 'username' not in login_session:
-        return redirect('/catalog')
 
     item = session.query(Item).filter_by(name=item_name).one()
     if item.user_id != login_session['user_id']:
@@ -249,9 +261,8 @@ def editItem(item_name, category_name):
 
 
 @app.route('/catalog/<category_name>/<item_name>/delete', methods=['GET', 'POST'])
+@login_required
 def deleteItem(item_name, category_name):
-    if 'username' not in login_session:
-        return redirect('/catalog')
 
     cat = session.query(Category).filter_by(name=category_name).one()
     item = session.query(Item).filter_by(name=item_name,
@@ -281,6 +292,7 @@ def deleteItem(item_name, category_name):
 # Return all data in JSON format
 @app.route('/catalog.json')
 def catalogJSON():
+    """Return all data in the database in JSON format"""
     cat_list = session.query(Category).all()
     result = []
     for cat in cat_list:
@@ -294,6 +306,7 @@ def catalogJSON():
 # Handle Google API
 @app.route('/gconnect', methods=['POST'])
 def gconnect():
+    """Google connect API"""
     # Validate state token
     if request.args.get('state') != login_session['state']:
         response = make_response(json.dumps('Invalid state parameter.'), 401)
@@ -397,6 +410,7 @@ def gconnect():
 
 @app.route('/gdisconnect')
 def gdisconnect():
+    """Google disconnect"""
     access_token = login_session['access_token']
     if access_token is None:
         response = make_response(json.dumps('Current user not connected.'),
@@ -423,6 +437,7 @@ def gdisconnect():
 # Facebook API
 @app.route('/fbconnect', methods=['POST'])
 def fbconnect():
+    """Facebook connect API"""
     if request.args.get('state') != login_session['state']:
         response = make_response(json.dumps('Invalid state parameter.'), 401)
         response.headers['Content-Type'] = 'application/json'
@@ -487,6 +502,7 @@ def fbconnect():
 
 @app.route('/fbdisconnect')
 def fbdisconnect():
+    """Facebook disconnect"""
     facebook_id = login_session['facebook_id']
 
     # The access token must me included to successfully logout
@@ -498,9 +514,9 @@ def fbdisconnect():
     return "you have been logged out"
 
 
-# Disconnect based on provider
 @app.route('/disconnect')
 def disconnect():
+    """Disconnect based on provider"""
     if 'provider' in login_session:
         if login_session['provider'] == 'google':
             gdisconnect()
